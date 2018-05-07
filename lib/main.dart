@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'dart:async';
 
 enum TileState { covered, blown, open, flagged, revealed }
 
@@ -9,7 +10,10 @@ class MineSweeper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: "Mine Sweeper",
+      theme: ThemeData(
+        primarySwatch: Colors.deepOrange,
+      ),
+      title: 'Mine Sweeper',
       home: Board(),
     );
   }
@@ -28,7 +32,29 @@ class BoardState extends State<Board> {
   List<List<TileState>> uiState;
   List<List<bool>> tiles;
 
+  bool alive;
+  bool wonGame;
+  int minesFound;
+  Timer timer;
+  Stopwatch stopwatch = Stopwatch();
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
   void resetBoard() {
+    alive = true;
+    wonGame = false;
+    minesFound = 0;
+    stopwatch.reset();
+
+    timer?.cancel();
+    timer = Timer.periodic(Duration(seconds: 1), (Timer timer) {
+      setState(() {});
+    });
+
     uiState = new List<List<TileState>>.generate(rows, (row) {
       return new List<TileState>.filled(cols, TileState.covered);
     });
@@ -57,19 +83,26 @@ class BoardState extends State<Board> {
   }
 
   Widget buildBoard() {
+    bool hasCoveredCell = false;
     List<Row> boardRow = <Row>[];
     for (int y = 0; y < rows; y++) {
       List<Widget> rowChildren = <Widget>[];
       for (int x = 0; x < cols; x++) {
         TileState state = uiState[y][x];
         int count = mineCount(x, y);
+
+        if (!alive) {
+          if (state != TileState.blown)
+            state = tiles[y][x] ? TileState.revealed : state;
+        }
+
         if (state == TileState.covered || state == TileState.flagged) {
           rowChildren.add(GestureDetector(
             onLongPress: () {
               flag(x, y);
             },
             onTap: () {
-              probe(x, y);
+              if (state == TileState.covered) probe(x, y);
             },
             child: Listener(
                 child: CoveredMineTile(
@@ -78,6 +111,9 @@ class BoardState extends State<Board> {
               posY: y,
             )),
           ));
+          if (state == TileState.covered) {
+            hasCoveredCell = true;
+          }
         } else {
           rowChildren.add(OpenMineTile(
             state: state,
@@ -91,6 +127,13 @@ class BoardState extends State<Board> {
         key: ValueKey<int>(y),
       ));
     }
+    if (!hasCoveredCell) {
+      if ((minesFound == numOfMines) && alive) {
+        wonGame = true;
+        stopwatch.stop();
+      }
+    }
+
     return Container(
       color: Colors.grey[700],
       padding: EdgeInsets.all(10.0),
@@ -102,9 +145,32 @@ class BoardState extends State<Board> {
 
   @override
   Widget build(BuildContext context) {
+    int timeElapsed = stopwatch.elapsedMilliseconds ~/ 1000;
     return Scaffold(
+      resizeToAvoidBottomPadding: false,
       appBar: AppBar(
+        centerTitle: true,
         title: Text('Mine Sweeper'),
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(45.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: <Widget>[
+              Container(
+                height: 40.0,
+                alignment: Alignment.center,
+                child: RichText(
+                  text: TextSpan(
+                      text: wonGame
+                          ? 'You have Won! $timeElapsed seconds'
+                          : alive
+                              ? '[\u{1f4a3} Found: $minesFound] [Total \u{1f4a3}: $numOfMines] [$timeElapsed seconds]'
+                              : 'You have Lost! $timeElapsed seconds'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
       body: Container(
         color: Colors.grey[50],
@@ -112,16 +178,35 @@ class BoardState extends State<Board> {
           child: buildBoard(),
         ),
       ),
+      floatingActionButton: FlatButton(
+        child: Text(
+          'Reset Board',
+          style: TextStyle(color: Colors.white),
+        ),
+        onPressed: () => resetBoard(),
+        splashColor: Colors.redAccent,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(
+            color: Colors.deepOrange[200],
+          ),
+        ),
+        color: Colors.deepOrangeAccent[100],
+      ),
     );
   }
 
   void probe(int x, int y) {
+    if (!alive) return;
     if (uiState[y][x] == TileState.flagged) return;
     setState(() {
       if (tiles[y][x]) {
         uiState[y][x] = TileState.blown;
+        alive = false;
+        timer.cancel();
+        stopwatch.stop(); // force the stopwatch to stop.
       } else {
         open(x, y);
+        if (!stopwatch.isRunning) stopwatch.start();
       }
     });
   }
@@ -144,11 +229,14 @@ class BoardState extends State<Board> {
   }
 
   void flag(int x, int y) {
+    if (!alive) return;
     setState(() {
       if (uiState[y][x] == TileState.flagged) {
         uiState[y][x] = TileState.covered;
+        --minesFound;
       } else {
         uiState[y][x] = TileState.flagged;
+        ++minesFound;
       }
     });
   }
@@ -205,7 +293,7 @@ class CoveredMineTile extends StatelessWidget {
     if (flagged) {
       text = buildInnerTile(RichText(
         text: TextSpan(
-          text: "\u{1f6a9}",
+          text: '\u{1f6a9}',
         ),
         textAlign: TextAlign.center,
       ));
