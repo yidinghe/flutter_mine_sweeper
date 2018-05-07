@@ -58,30 +58,37 @@ class BoardState extends State<Board> {
 
   Widget buildBoard() {
     List<Row> boardRow = <Row>[];
-    for (int i = 0; i < rows; i++) {
+    for (int y = 0; y < rows; y++) {
       List<Widget> rowChildren = <Widget>[];
-      for (int j = 0; j < cols; j++) {
-        TileState state = uiState[i][j];
+      for (int x = 0; x < cols; x++) {
+        TileState state = uiState[y][x];
+        int count = mineCount(x, y);
         if (state == TileState.covered || state == TileState.flagged) {
           rowChildren.add(GestureDetector(
+            onLongPress: () {
+              flag(x, y);
+            },
+            onTap: () {
+              probe(x, y);
+            },
             child: Listener(
                 child: CoveredMineTile(
               flagged: state == TileState.flagged,
-              posX: i,
-              posY: j,
+              posX: x,
+              posY: y,
             )),
           ));
         } else {
           rowChildren.add(OpenMineTile(
             state: state,
-            count: 1,
+            count: count,
           ));
         }
       }
       boardRow.add(Row(
         children: rowChildren,
         mainAxisAlignment: MainAxisAlignment.center,
-        key: ValueKey<int>(i),
+        key: ValueKey<int>(y),
       ));
     }
     return Container(
@@ -107,6 +114,61 @@ class BoardState extends State<Board> {
       ),
     );
   }
+
+  void probe(int x, int y) {
+    if (uiState[y][x] == TileState.flagged) return;
+    setState(() {
+      if (tiles[y][x]) {
+        uiState[y][x] = TileState.blown;
+      } else {
+        open(x, y);
+      }
+    });
+  }
+
+  void open(int x, int y) {
+    if (!inBoard(x, y)) return;
+    if (uiState[y][x] == TileState.open) return;
+    uiState[y][x] = TileState.open;
+
+    if (mineCount(x, y) > 0) return;
+
+    open(x - 1, y);
+    open(x + 1, y);
+    open(x, y - 1);
+    open(x, y + 1);
+    open(x - 1, y - 1);
+    open(x + 1, y + 1);
+    open(x + 1, y - 1);
+    open(x - 1, y + 1);
+  }
+
+  void flag(int x, int y) {
+    setState(() {
+      if (uiState[y][x] == TileState.flagged) {
+        uiState[y][x] = TileState.covered;
+      } else {
+        uiState[y][x] = TileState.flagged;
+      }
+    });
+  }
+
+  int mineCount(int x, int y) {
+    int count = 0;
+    count += bombs(x - 1, y);
+    count += bombs(x + 1, y);
+    count += bombs(x, y - 1);
+    count += bombs(x, y + 1);
+    count += bombs(x - 1, y - 1);
+    count += bombs(x + 1, y + 1);
+    count += bombs(x + 1, y - 1);
+    count += bombs(x - 1, y + 1);
+    return count;
+  }
+
+  int bombs(int x, int y) => inBoard(x, y) && tiles[y][x] ? 1 : 0;
+
+  bool inBoard(int x, int y) => x >= 0 && x < cols && y >= 0 && y < rows;
 }
 
 Widget buildTile(Widget child) {
@@ -143,11 +205,7 @@ class CoveredMineTile extends StatelessWidget {
     if (flagged) {
       text = buildInnerTile(RichText(
         text: TextSpan(
-          text: "\u2691",
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-          ),
+          text: "\u{1f6a9}",
         ),
         textAlign: TextAlign.center,
       ));
@@ -171,6 +229,17 @@ class OpenMineTile extends StatelessWidget {
 
   OpenMineTile({this.state, this.count});
 
+  final List textColor = [
+    Colors.blue,
+    Colors.green,
+    Colors.red,
+    Colors.purple,
+    Colors.cyan,
+    Colors.amber,
+    Colors.brown,
+    Colors.black,
+  ];
+
   @override
   Widget build(BuildContext context) {
     Widget text;
@@ -182,7 +251,7 @@ class OpenMineTile extends StatelessWidget {
             text: '$count',
             style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: Colors.blue,
+              color: textColor[count - 1],
             ),
           ),
           textAlign: TextAlign.center,
@@ -191,11 +260,7 @@ class OpenMineTile extends StatelessWidget {
     } else {
       text = RichText(
         text: TextSpan(
-          text: '\u2739',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.red,
-          ),
+          text: '\u{1f4a3}',
         ),
         textAlign: TextAlign.center,
       );
